@@ -22,7 +22,8 @@
 extern int highscore;
 extern bool auto_capture_highest;
 double last_avg_score = 0.0;
-
+extern std::string train_out_filename;
+extern ofstream train_file;
 
 using namespace std;
 using namespace dlib;
@@ -54,6 +55,15 @@ int main( int argc, char** argv )
     std::string file;
     if( argc > 5 )
         file = argv[5];
+
+    if( argc > 6 )
+    {
+        train_out_filename = argv[6];
+        train_file.open( train_out_filename );
+    }
+        
+
+    
 
 
     Population pop( wx, wy, population, threads, file );

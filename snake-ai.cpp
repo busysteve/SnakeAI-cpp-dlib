@@ -5,6 +5,7 @@
 #include <iostream>
 #include <string>
 #include "snake-ai.h"
+#include <mutex>
 
 //std::vector< la::la_vector<double> > vecs;
 
@@ -17,6 +18,9 @@ extern bool end_it_all;
 extern bool auto_capture_highest;
 extern double last_avg_score;
 
+std::mutex train_out_mutex;
+std::string train_out_filename;
+std::ofstream train_file;
 
 Snake::Snake( unsigned int seed )
 	: rnd( seed )
@@ -400,7 +404,8 @@ void Snake::move()
     std::vector< input_matrix_type > vecMats = { m_imat };
     direction = net( vecMats )[0];
    
-   
+  
+ 
     //cout << " " << m_snake.size() << endl;
  
     part back_part( m_snake.back() );
@@ -442,7 +447,21 @@ void Snake::move()
         m_snake.pop_back();
     
     m_snake.push_front( p );
- 
+
+
+    if( train_out_filename.length() > 0 ) 
+    {
+
+        train_out_mutex.lock();
+        cerr.precision(9);
+	for( int i=0; i < 8; i++ )
+            train_file << m_imat(0,i) << "," << m_imat(1,i) << "," << m_imat(2,i) << ","; 
+
+        train_file << direction << endl;
+
+        train_out_mutex.unlock();
+    }
+
 }
 
 void Snake::set_food( int x, int y )
@@ -502,6 +521,9 @@ void Snake::show()
         {
             refresh();
             endwin();
+            train_out_mutex.lock();
+            train_file.close();
+            train_out_mutex.unlock();
             exit(0);
         }
 
