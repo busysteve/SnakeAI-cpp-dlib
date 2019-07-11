@@ -172,6 +172,8 @@ public:
         }
     }
 
+    void train( std::string file );
+
     int moves()
     {
         return m_moves;

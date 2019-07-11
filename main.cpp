@@ -18,12 +18,18 @@
 
 
 #include "snake-pop.h"
+#include "snake-ai.h"
 
+extern int generation;
 extern int highscore;
 extern bool auto_capture_highest;
+extern bool snake_warp;
 double last_avg_score = 0.0;
 extern std::string train_out_filename;
 extern ofstream train_file;
+extern bool end_it_all;
+extern std::mutex train_out_mutex;
+int    max_gens = 0;
 
 using namespace std;
 using namespace dlib;
@@ -52,14 +58,61 @@ int main( int argc, char** argv )
     int wy = atoi( argv[2] );
     int population = atoi( argv[3] );
     int threads = atoi( argv[4] );
-    std::string file;
+    std::string file, training_file;
+
     if( argc > 5 )
-        file = argv[5];
+    {
+        if( atoi( argv[5] ) == 1 )
+        {
+            if( argc > 7 )
+            {
+               training_file = argv[7];
+            }
+            
+
+            ::refresh();
+            ::endwin();
+ 
+            Snake snake( ::time(NULL) );
+            snake.init( wx, wy );
+
+            snake.train( training_file );
+
+/*
+            ::initscr();
+            ::cbreak();
+            ::noecho();
+            ::curs_set(0);
+            ::clear();
+
+
+            while(1)
+            {
+               snake.show();
+            }
+*/
+
+            exit(0);
+
+        }
+        else
+            file = argv[5];
+    }
 
     if( argc > 6 )
     {
-        train_out_filename = argv[6];
-        train_file.open( train_out_filename );
+        ::max_gens = atoi( argv[6] );
+
+        if( ::max_gens == 0 )
+        {
+            train_out_filename = argv[6];
+            train_file.open( train_out_filename );
+        }
+        else
+        {
+            ::auto_capture_highest = true;
+            ::snake_warp = true;
+        }
     }
         
 
@@ -71,7 +124,24 @@ int main( int argc, char** argv )
     pop.initializeSnakes( wx, wy );
 
     pop.update();
+
+    
     pop.show();
+
+
+    if( train_out_filename.length() > 0 )
+    {
+        end_it_all = true;
+        train_out_mutex.lock();
+        train_file.close();
+        train_out_mutex.unlock();
+        dlib::sleep( 500 );
+        ::refresh();
+        ::endwin();
+
+        exit(0);
+    }
+
 
     if( file.empty() )
         file = "nameless_snake.net";
@@ -107,8 +177,11 @@ int main( int argc, char** argv )
         localHighScore = pop.bestScore();
 
         dlib::sleep( 10 );
+
+        if( ::max_gens > 0 && ::generation > ::max_gens )
+            break;
     }
-        ::sleep(10000);
+        ::sleep(1);
 
 
 

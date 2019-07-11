@@ -6,7 +6,7 @@
 #include "snake-pop.h"
 #include "snake-ai.h"
 
-int snake_delay = 60;
+int snake_delay = 40;
 bool snake_warp = false;
 int mutation = 5;
 int generation = 0;

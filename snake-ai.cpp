@@ -288,7 +288,65 @@ void Snake::randomize( Snake* s )
 
 
 
+void Snake::train( std::string file )
+{
 
+    
+    std::vector< input_matrix_type > vecMats;
+    std::vector< long unsigned int > vecLabels;
+
+    trainer.set_learning_rate(0.01);
+    trainer.set_min_learning_rate(0.000001);
+    trainer.set_mini_batch_size(500);
+    trainer.be_verbose();
+
+
+
+    ifstream inFile;
+
+    inFile.open( file );
+
+    while( !inFile.eof() ) 
+    {
+        for( int d=0; d < 8; d++ )
+        {
+            inFile >> m_imat(0,d) >> m_imat(1,d) >> m_imat(2,d);
+        }
+        vecMats.push_back( m_imat );
+        int label=0;
+        inFile >> label;
+        vecLabels.push_back( label );
+    }
+    
+    inFile.close();
+
+    // Since DNN training can take a long time, we can ask the trainer to save its state to
+    // a file named "mnist_sync" every 20 seconds.  This way, if we kill this program and
+    // start it again it will begin where it left off rather than restarting the training
+    // from scratch.  This is because, when the program restarts, this call to
+    // set_synchronization_file() will automatically reload the settings from mnist_sync if
+    // the file exists.
+  //  trainer.set_synchronization_file("snake_sync", std::chrono::seconds(20));
+    // Finally, this line begins training.  By default, it runs SGD with our specified
+    // learning rate until the loss stops decreasing.  Then it reduces the learning rate by
+    // a factor of 10 and continues running until the loss stops decreasing again.  It will
+    // keep doing this until the learning rate has dropped below the min learning rate
+    // defined above or the maximum number of epochs as been executed (defaulted to 10000). 
+    trainer.train(vecMats, vecLabels);
+
+    // At this point our net object should have learned how to classify MNIST images.  But
+    // before we try it out let's save it to disk.  Note that, since the trainer has been
+    // running images through the network, net will have a bunch of state in it related to
+    // the last batch of images it processed (e.g. outputs from each layer).  Since we
+    // don't care about saving that kind of stuff to disk we can tell the network to forget
+    // about that kind of transient data so that our file will be smaller.  We do this by
+    // "cleaning" the network before saving it.
+    net.clean();
+    
+    dlib::serialize( (file+".net")) << net;
+
+
+}
 
 void Snake::move()
 {
@@ -398,7 +456,7 @@ void Snake::move()
         auto saw = look( views[d][0], views[d][1] );
         m_imat(0,d) = (float)( saw.first == 1.0 ? 1.0 : 0.0 ); // body
         m_imat(1,d) = (float)( saw.first == 2.0 ? 1.0 : 0.0 ); // food
-        m_imat(2,d) = 1.0 / saw.second; // distance
+        m_imat(2,d) = 1.0 / (saw.second+.00001); // distance
     }
     
     std::vector< input_matrix_type > vecMats = { m_imat };
@@ -434,33 +492,41 @@ void Snake::move()
     //if( hit_wall( p )  )
     if( hit_wall( p ) || hit_body( p ) || m_moves_left <= 0)
     {
+        if( train_out_filename.length() > 0 ) 
+        {
+            train_file.precision(3);
+            train_out_mutex.lock();
+            for( auto m : m_last_good_observations )
+            {
+               for( int i=0; i < 8; i++ )
+                  train_file << m(0,i) << " " << m(1,i) << " " << m(2,i) << " "; 
+               train_file << direction << endl;
+            }
+            train_out_mutex.unlock();
+        }
         m_dead = true;
         return;
     }
     else if( p.x == m_food.x && p.y == m_food.y )
     {
+        if( !train_out_filename.empty() )
+            m_last_good_observations.push_back( m_imat );
+
         m_got_food = true;
         m_moves_left += 100;
         set_food();
     }
     else
+    {
+        if( !train_out_filename.empty() )
+            m_last_good_observations.push_back( m_imat );
+
         m_snake.pop_back();
-    
+    }
+
     m_snake.push_front( p );
 
 
-    if( train_out_filename.length() > 0 ) 
-    {
-
-        train_out_mutex.lock();
-        cerr.precision(9);
-	for( int i=0; i < 8; i++ )
-            train_file << m_imat(0,i) << "," << m_imat(1,i) << "," << m_imat(2,i) << ","; 
-
-        train_file << direction << endl;
-
-        train_out_mutex.unlock();
-    }
 
 }
 
@@ -494,15 +560,18 @@ void Snake::show()
     for( int i=0; i<m_wy; i++)
         ::mvprintw( m_wx, i, "*" );
 
-    ::mvprintw( m_wy + 1, 5, "avg score: %0.2f", ::last_avg_score );
-    ::mvprintw( m_wy + 2, 5, "high score: %d", ::highscore );
-    ::mvprintw( m_wy + 3, 5, "generation: %d", ::generation );
-    ::mvprintw( m_wy + 4, 5, "mutation:   %d%%", ::mutation );
-    ::mvprintw( m_wy + 5, 5, "auto capture: %s", ::auto_capture_highest ? "on" : "off" );
+    ::mvprintw( m_wy + 3, 5, "avg score: %0.3f", ::last_avg_score );
+    ::mvprintw( m_wy + 4, 5, "high score: %d", ::highscore );
+    ::mvprintw( m_wy + 5, 5, "generation: %d", ::generation );
+    ::mvprintw( m_wy + 6, 5, "mutation:   %d%%", ::mutation );
+    ::mvprintw( m_wy + 7, 5, "auto capture: %s", ::auto_capture_highest ? "on" : "off" );
     
 
     do
     {
+        ::mvprintw( m_wy + 1, 5, "score: %d", this->m_snake.size()-2 );
+        ::mvprintw( m_wy + 2, 5, "moves left: %d", this->moves_left() );
+
         move();
 
         mvaddch( m_food.x, m_food.y, '#' );
@@ -521,9 +590,6 @@ void Snake::show()
         {
             refresh();
             endwin();
-            train_out_mutex.lock();
-            train_file.close();
-            train_out_mutex.unlock();
             exit(0);
         }
 
